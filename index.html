@@ -552,7 +552,8 @@
   }
 
   function resetLevel(){
-    score = 0; lives = 3; buildLevel(); flash("スタート！");
+    score = 0; lives = 3; paused = false;
+    buildLevel(); flash("スタート！");
   }
   function respawn(){
     // スタート地点へ戻す
