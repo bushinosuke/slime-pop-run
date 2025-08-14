@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Slime Pop Run</title>
+<style>
+  html, body { margin:0; height:100%; background:#f6fbff; font-family: system-ui, -apple-system, "Segoe UI", Roboto; }
+  #wrap { display:flex; flex-direction:column; height:100%; }
+  #hud {
+    display:flex; gap:16px; align-items:center; justify-content:space-between;
+    padding:10px 14px; background:linear-gradient(180deg,#ffffffaa,#ffffff66);
+    backdrop-filter: blur(6px); position:relative; z-index:2; box-shadow: 0 2px 8px #00000010;
+  }
+  #hud .stat { font-weight:700; color:#5a6a7a; font-size:14px; }
+  #game { flex:1; position:relative; }
+  canvas { width:100%; height:100%; display:block; background:linear-gradient(#ccf2ff,#f5f9ff 60%); }
+  #msg {
+    position:absolute; left:50%; top:20px; transform:translateX(-50%);
+    background:#ffffffd8; border-radius:12px; padding:8px 12px; color:#445; font-weight:700;
+    box-shadow:0 4px 12px #00000015; z-index:2; user-select: none;
+  }
+  /* モバイル用ソフトボタン */
+  #controls {
+    position:absolute; left:0; right:0; bottom:8px; z-index:3; display:flex; justify-content:space-between; padding:0 10px; pointer-events:none;
+  }
+  .pad {
+    display:flex; gap:10px; pointer-events:auto;
+  }
+  .btn {
+    width:64px; height:64px; border-radius:16px; background:#ffffffbb;
+    border:2px solid #bfe9ff; box-shadow:0 4px 10px #00000020; touch-action:none;
+    display:grid; place-items:center; user-select:none; font-weight:800; color:#69a; backdrop-filter: blur(6px);
+  }
+  .btn:active { transform: translateY(2px); }
+  @media (min-width: 900px) {
+    #controls { display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="stat" id="score">★ 0</div>
+    <div class="stat" id="tips">操作：←→ 移動 / ↑ or Space ジャンプ / R リスタート</div>
+    <div class="stat" id="lives">♥ 3</div>
+  </div>
+  <div id="game">
+    <div id="msg">ゴールの旗まで進もう！ コインを集めてスコアUP</div>
+    <canvas id="cv" width="960" height="540" aria-label="Slime Pop Run"></canvas>
+    <div id="controls" aria-hidden="false">
+      <div class="pad">
+        <div class="btn" data-left>←</div>
+        <div class="btn" data-right>→</div>
+      </div>
+      <div class="pad">
+        <div class="btn" data-jump>⤴</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ===== 可愛い配色 =====
+  const COLORS = {
+    skyTop: '#ccf2ff', skyBottom: '#f5f9ff',
+    ground: '#ffd8e1', block: '#ffeef5',
+    blockEdge: '#ffb3c7',
+    spike: '#ff8e9e',
+    coin: '#ffd66e',
+    flag: '#9ad7ff',
+    flagPole: '#8bc5ff',
+    slimeBody: '#7fd8ff',
+    slimeBelly: '#bff0ff',
+    slimeEye: '#2a3b4c',
+    enemy: '#ffb1f3',
+    enemyEdge: '#ff80e8',
+    text: '#4c5d70'
+  };
+
+  // ===== 入力管理 =====
+  const keys = { left:false, right:false, up:false };
+  const onKey = (e, down) => {
+    switch (e.code) {
+      case 'ArrowLeft': case 'KeyA': keys.left=down; break;
+      case 'ArrowRight': case 'KeyD': keys.right=down; break;
+      case 'ArrowUp': case 'Space': case 'KeyW': if (down) keys.up=true; break;
+      case 'KeyR': if (down) resetLevel(); break;
+    }
+    if (['ArrowLeft','ArrowRight','ArrowUp','Space'].includes(e.code)) e.preventDefault();
+  };
+  addEventListener('keydown', e=>onKey(e,true));
+  addEventListener('keyup',   e=>onKey(e,false));
+
+  // タッチボタン
+  const bindHold = (el, setter) => {
+    const on = (ev) => { ev.preventDefault(); setter(true); };
+    const off= (ev) => { ev.preventDefault(); setter(false); };
+    el.addEventListener('pointerdown', on);
+    addEventListener('pointerup', off);
+    addEventListener('pointercancel', off);
+    addEventListener('pointerleave', off);
+  };
+  bindHold(document.querySelector('[data-left]'),  v=>keys.left=v);
+  bindHold(document.querySelector('[data-right]'), v=>keys.right=v);
+  bindHold(document.querySelector('[data-jump]'),  v=>{ if (v) keys.up=true; });
+
+  // ===== キャンバス =====
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  function resize() {
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = Math.round(w * dpr);
+    cv.height= Math.round(h * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  addEventListener('resize', resize); resize();
+
+  // ===== ユーティリティ =====
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  const sign = (v)=> v<0?-1: v>0?1:0;
+
+  // ===== タイルマップ =====
+  // 記号: #=ブロック, ^=トゲ, .=空, o=コイン, e=敵, S=スタート, F=ゴール
+  const LEVEL = [
+    "....................................................................................",
+    "....................................................................................",
+    ".......................o.............o..............................................",
+    ".............o........................................o.............................",
+    "##########################.......##########....................o....................",
+    ".......................e..o....o.........#..........................................",
+    ".....S.............#####.....#######.....#..............o..............o............",
+    "###################.....###........#######..........................................",
+    ".................o......................o....................e......................",
+    ".......###########..............###########..........###########..............######",
+    ".............................................o......................................",
+    "....o..........................e.....................o..............................",
+    "##############..........###################.....###############...........##########",
+    "..............#..............................................#.....................",
+    "....o....e....#..................o...........................#.............o.......",
+    "###############..............#########...........^^^^^^^.....#....###########......",
+    "..........................o..................######...####...#.....................",
+    ".............o........###########..................e........#........o.............",
+    "###############............................###################....##############F##"
+  ];
+
+  const TILE = 32;
+  const mapH = LEVEL.length;
+  const mapW = LEVEL[0].length;
+
+  const solids = new Set(['#']);
+  const hazards= new Set(['^']);
+  const pickups= new Set(['o']);
+
+  const inMap = (tx,ty)=> tx>=0 && ty>=0 && tx<mapW && ty<mapH;
+  const isSolid = (tx,ty)=> inMap(tx,ty) && solids.has(LEVEL[ty][tx]);
+  const isHazard= (tx,ty)=> inMap(tx,ty) && hazards.has(LEVEL[ty][tx]);
+
+  // ===== エンティティ =====
+  class Rect {
+    constructor(x,y,w,h){ this.x=x; this.y=y; this.w=w; this.h=h; }
+    get left(){return this.x;} get right(){return this.x+this.w;}
+    get top(){return this.y;} get bottom(){return this.y+this.h;}
+  }
+  class Entity extends Rect {
+    constructor(x,y,w,h){ super(x,y,w,h); this.vx=0; this.vy=0; this.rem=false; }
+  }
+
+  class Player extends Entity {
+    constructor(x,y){
+      super(x,y,24,24);
+      this.onGround=false;
+      this.jumpBuffered=0;
+      this.coyote=0;
+      this.facing=1;
+      this.alive=true;
+      this.blink=0;
+    }
+    update(dt){
+      const speed = 160;
+      const accel = 1400;
+      const decc  = 1800;
+      const maxFall = 900;
+      const jumpV = 360;
+
+      // 入力
+      let ax = 0;
+      if (keys.left)  ax -= accel, this.facing=-1;
+      if (keys.right) ax += accel, this.facing= 1;
+
+      // 水平速度
+      if (ax !== 0) {
+        this.vx += ax*dt;
+        this.vx = clamp(this.vx, -speed, speed);
+      } else {
+        // 自然減速
+        if (Math.abs(this.vx) < 4) this.vx = 0;
+        else this.vx -= decc * sign(this.vx) * dt;
+      }
+
+      // ジャンプ入力バッファ
+      if (keys.up){ this.jumpBuffered = 0.12; keys.up=false; }
+      this.jumpBuffered = Math.max(0, this.jumpBuffered - dt);
+      this.coyote = Math.max(0, this.coyote - dt);
+
+      // 重力
+      this.vy += 2000 * dt;
+      this.vy = Math.min(this.vy, maxFall);
+
+      // 地形との当たり判定（X→Y の順）
+      this.x += this.vx*dt;
+      this.resolveCollisions(true);
+      this.y += this.vy*dt;
+      const wasOnGround = this.onGround;
+      this.onGround = this.resolveCollisions(false);
+
+      if (this.onGround) this.coyote = 0.08;
+
+      // ジャンプ（コヨーテタイム＋入力バッファ）
+      if (this.alive && this.jumpBuffered>0 && (this.onGround || this.coyote>0)) {
+        this.vy = -jumpV;
+        this.onGround = false;
+        this.coyote = 0;
+        this.jumpBuffered = 0;
+        particles.jump(this.x+this.w/2, this.bottom);
+      }
+
+      // ハザード判定
+      if (this.hitHazard()) this.die();
+
+      // 敵踏みつけ・接触
+      for (const e of enemies) {
+        if (aabb(this, e)) {
+          // 上から踏んだ
+          if (this.vy>0 && this.bottom - e.top < 14) {
+            this.y = e.top - this.h; this.vy = -280; e.stomp();
+            score += 50; flash('いいね！ 50');
+          } else {
+            this.die();
+          }
+        }
+      }
+
+      // コイン取得
+      for (const c of coins) {
+        if (!c.rem && aabb(this,c)) { c.rem=true; score += 10; flash('+10'); }
+      }
+
+      // ゴール
+      if (aabb(this, flag)) {
+        win();
+      }
+
+      // 目パチ
+      this.blink += dt;
+    }
+
+    hitHazard(){
+      // 足元4点でトゲ判定
+      const pts = [
+        [this.left+3, this.bottom-2],
+        [this.right-3, this.bottom-2],
+        [this.left+3, this.top+4],
+        [this.right-3, this.top+4],
+      ];
+      for (const [px,py] of pts) {
+        const tx = Math.floor(px/TILE), ty = Math.floor(py/TILE);
+        if (isHazard(tx,ty)) return true;
+      }
+      return false;
+    }
+
+    resolveCollisions(horizontal){
+      const minx = Math.floor((this.left-1)/TILE), maxx = Math.floor((this.right+1)/TILE);
+      const miny = Math.floor((this.top-1)/TILE),  maxy = Math.floor((this.bottom+1)/TILE);
+      let grounded=false;
+      for (let ty=miny; ty<=maxy; ty++){
+        for (let tx=minx; tx<=maxx; tx++){
+          if (!isSolid(tx,ty)) continue;
+          const bx = tx*TILE, by=ty*TILE;
+          const bw=TILE, bh=TILE;
+          if (this.right>bx && this.left<bx+bw && this.bottom>by && this.top<by+bh){
+            // 衝突解消
+            const dx1 = (bx+bw) - this.left;
+            const dx2 = this.right - bx;
+            const dy1 = (by+bh) - this.top;
+            const dy2 = this.bottom - by;
+            const penX = Math.min(dx1, dx2);
+            const penY = Math.min(dy1, dy2);
+            if (horizontal) {
+              // X移動時はXを優先して解消
+              if (penX < penY) {
+                if (dx1 < dx2) this.x = bx + bw; else this.x = bx - this.w;
+                this.vx = 0;
+              }
+            } else {
+              // Y移動時はYを優先
+              if (penY <= penX) {
+                if (dy1 < dy2) { this.y = by + bh; this.vy = 0; }
+                else { this.y = by - this.h; this.vy = 0; grounded=true; }
+              }
+            }
+          }
+        }
+      }
+      return grounded;
+    }
+
+    die(){
+      if (!this.alive) return;
+      this.alive=false;
+      lives--;
+      shake(8, 350);
+      particles.poof(this.x+this.w/2, this.y+this.h/2, COLORS.slimeBody);
+      if (lives<=0) lose();
+      else respawn();
+    }
+
+    draw(){
+      // 体（ぷにぷに）
+      const t = Date.now()/1000;
+      const squish = clamp((Math.sin(t*6)+1)/12,0,0.1);
+      const w = this.w*(1+squish), h = this.h*(1-squish);
+      const cx = this.x + this.w/2, cy = this.y + this.h/2;
+      roundedBlob(cx, cy, w, h, COLORS.slimeBody, COLORS.slimeBelly);
+
+      // 目
+      const eyeY = -3;
+      const eyeX = 5 * this.facing;
+      circle(cx - eyeX, cy + eyeY, 3, COLORS.slimeEye);
+      circle(cx + eyeX, cy + eyeY, 3, COLORS.slimeEye);
+
+      // ほんのり影
+      ctx.globalAlpha = 0.15;
+      ellipse(this.x+this.w/2, this.bottom+6, this.w*0.7, 5, '#000');
+      ctx.globalAlpha = 1.0;
+    }
+  }
+
+  class Enemy extends Entity {
+    constructor(x,y){
+      super(x,y,24,22);
+      this.dir = Math.random()<0.5?-1:1;
+      this.speed = 45 + Math.random()*35;
+      this.dead = false;
+    }
+    update(dt){
+      if (this.dead) return;
+      // 足元のタイルで端チェック、壁で反転
+      this.vx = this.dir * this.speed;
+      this.x += this.vx*dt;
+      if (this.collideSolid()){ this.dir *= -1; this.x += this.dir*4; }
+      // 落下しないように足元1タイル先を確認
+      const aheadX = Math.floor((this.centerX() + this.dir*14)/TILE);
+      const footY  = Math.floor((this.bottom+2)/TILE);
+      if (!isSolid(aheadX, footY)) this.dir *= -1;
+
+      // 重力&地面
+      this.vy += 2000*dt; this.y += this.vy*dt;
+      if (this.collideSolidY()){ this.vy=0; }
+    }
+    centerX(){ return this.x+this.w/2; }
+    collideSolid(){
+      const minx = Math.floor((this.left-1)/TILE), maxx = Math.floor((this.right+1)/TILE);
+      const miny = Math.floor((this.top-1)/TILE),  maxy = Math.floor((this.bottom+1)/TILE);
+      for (let ty=miny; ty<=maxy; ty++){
+        for (let tx=minx; tx<=maxx; tx++){
+          if (!isSolid(tx,ty)) continue;
+          const bx = tx*TILE, by=ty*TILE;
+          if (this.right>bx && this.left<bx+TILE && this.bottom>by && this.top<by+TILE){
+            // X のみ解消
+            const dx1 = (bx+TILE) - this.left;
+            const dx2 = this.right - bx;
+            if (dx1 < dx2) this.x = bx+TILE; else this.x = bx - this.w;
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    collideSolidY(){
+      const minx = Math.floor((this.left-1)/TILE), maxx = Math.floor((this.right+1)/TILE);
+      const miny = Math.floor((this.top-1)/TILE),  maxy = Math.floor((this.bottom+1)/TILE);
+      for (let ty=miny; ty<=maxy; ty++){
+        for (let tx=minx; tx<=maxx; tx++){
+          if (!isSolid(tx,ty)) continue;
+          const bx = tx*TILE, by=ty*TILE;
+          if (this.right>bx && this.left<bx+TILE && this.bottom>by && this.top<by+TILE){
+            const dy1 = (by+TILE) - this.top;
+            const dy2 = this.bottom - by;
+            if (dy1 < dy2) this.y = by+TILE; else this.y = by - this.h;
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    stomp(){
+      this.dead = true; this.rem = true;
+      particles.poof(this.x+this.w/2, this.y+this.h/2, COLORS.enemy);
+    }
+    draw(){
+      // ぷよ敵
+      roundedBlob(this.x+this.w/2, this.y+this.h/2, this.w, this.h, COLORS.enemy, '#fff0');
+      // 縁取り
+      ctx.globalAlpha=0.5; roundedRect(this.x-2,this.y-2,this.w+4,this.h+4,8, COLORS.enemyEdge, false);
+      ctx.globalAlpha=1;
+      // 目
+      circle(this.x+8, this.y+8, 2.5, COLORS.slimeEye);
+      circle(this.x+this.w-8, this.y+8, 2.5, COLORS.slimeEye);
+    }
+  }
+
+  class Coin extends Entity {
+    constructor(x,y){ super(x,y,16,16); this.t=Math.random()*Math.PI*2; }
+    update(dt){ this.t+=dt*6; }
+    draw(){
+      const cx=this.x+8, cy=this.y+8;
+      const r=6 + Math.sin(this.t)*1.5;
+      circle(cx,cy,r, COLORS.coin);
+      ctx.strokeStyle='#e6b84e'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,r*0.6,0,Math.PI*2); ctx.stroke();
+    }
+  }
+
+  class Flag extends Entity {
+    constructor(x,y){ super(x,y-32,18,48); }
+    draw(){
+      // ポール
+      roundedRect(this.x, this.y-4, 4, this.h+8, 2, COLORS.flagPole, true);
+      // 旗
+      const t = Date.now()/400;
+      const fx = this.x+4, fy = this.y+10;
+      ctx.fillStyle = COLORS.flag;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.quadraticCurveTo(fx+18 + Math.sin(t)*2, fy+6, fx, fy+12);
+      ctx.closePath(); ctx.fill();
+      // ゴール台
+      roundedRect(this.x-6, this.y+this.h-12, 24, 12, 4, COLORS.blockEdge, true);
+    }
+  }
+
+  // ===== エフェクト =====
+  const particles = {
+    list: [],
+    add(x,y,vx,vy,life,color,size){ this.list.push({x,y,vx,vy,life,max:life,color,size}); },
+    jump(x,y){
+      for (let i=0;i<10;i++){
+        const a=Math.random()*Math.PI; const s=60+Math.random()*100;
+        this.add(x,y, Math.cos(a)*s, -Math.abs(Math.sin(a)*s), 0.4, COLORS.slimeBody, 3);
+      }
+    },
+    poof(x,y,color){
+      for (let i=0;i<18;i++){
+        const a=Math.random()*Math.PI*2; const s=80+Math.random()*120;
+        this.add(x,y, Math.cos(a)*s, Math.sin(a)*s, 0.6, color, 3.5);
+      }
+    },
+    update(dt){
+      for (const p of this.list){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=800*dt; }
+      this.list = this.list.filter(p=>p.life>0);
+    },
+    draw(){
+      for (const p of this.list){
+        ctx.globalAlpha = Math.max(0,p.life/p.max);
+        circle(p.x,p.y,p.size,p.color);
+      }
+      ctx.globalAlpha=1;
+    }
+  };
+
+  // ===== 衝突 & 描画ヘルパ =====
+  function aabb(a,b){ return a.left<b.right && a.right>b.left && a.top<b.bottom && a.bottom>b.top; }
+  function roundedRect(x,y,w,h,r,fill=true){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    if (fill){ ctx.fillStyle = arguments[5] || '#000'; ctx.fill(); }
+    else { ctx.strokeStyle = arguments[5] || '#000'; ctx.stroke(); }
+  }
+  function roundedBlob(cx,cy,w,h,color,belly){
+    // 本体
+    roundedRect(cx-w/2, cy-h/2, w, h, Math.min(12, w/3), true, color);
+    // ハイライト
+    ctx.globalAlpha=0.35;
+    ellipse(cx-w*0.15, cy-h*0.2, w*0.35, h*0.25, '#fff');
+    ctx.globalAlpha=1.0;
+    // お腹
+    ctx.globalAlpha=0.5;
+    ellipse(cx, cy+2, w*0.6, h*0.45, belly);
+    ctx.globalAlpha=1.0;
+  }
+  function ellipse(cx,cy,rx,ry, color){
+    ctx.beginPath();
+    ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+    ctx.fillStyle=color; ctx.fill();
+  }
+  function circle(x,y,r,color){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=color; ctx.fill(); }
+
+  // ===== カメラ =====
+  const camera = { x:0, y:0 };
+  function updateCamera(dt){
+    const targetX = clamp(player.x - cv.clientWidth/2 + player.w/2, 0, mapW*TILE - cv.clientWidth);
+    const targetY = clamp(player.y - cv.clientHeight/2 + player.h/2, 0, mapH*TILE - cv.clientHeight);
+    camera.x += (targetX - camera.x) * Math.min(1, dt*6);
+    camera.y += (targetY - camera.y) * Math.min(1, dt*6);
+  }
+
+  // ===== HUD =====
+  const elScore = document.getElementById('score');
+  const elLives = document.getElementById('lives');
+  const elMsg   = document.getElementById('msg');
+  let score = 0, lives = 3;
+  function updateHUD(){
+    elScore.textContent = `★ ${score}`;
+    elLives.textContent = `♥ ${lives}`;
+  }
+  let msgTimer=0;
+  function flash(text, t=1.2){
+    elMsg.textContent = text;
+    elMsg.style.opacity = 1;
+    msgTimer = t;
+  }
+
+  // ===== 画面シェイク =====
+  let shakeT=0, shakeMag=0;
+  function shake(mag, ms){
+    shakeMag = mag; shakeT = ms/1000;
+  }
+
+  // ===== レベル生成 =====
+  let player, enemies=[], coins=[], flag;
+  function buildLevel(){
+    enemies=[]; coins=[];
+    for (let y=0;y<mapH;y++){
+      for (let x=0;x<mapW;x++){
+        const ch = LEVEL[y][x];
+        if (ch==='S') { player = new Player(x*TILE+4, y*TILE-8); }
+        else if (ch==='e'){ enemies.push(new Enemy(x*TILE+4, y*TILE-10)); }
+        else if (ch==='o'){ coins.push(new Coin(x*TILE+8, y*TILE+8)); }
+        else if (ch==='F'){ flag = new Flag(x*TILE+12, y*TILE-8); }
+      }
+    }
+    if (!player) player = new Player(32, 32);
+    if (!flag) flag = new Flag((mapW-3)*TILE, (mapH-2)*TILE);
+  }
+
+  function resetLevel(){
+    score = 0; lives = 3; buildLevel(); flash("スタート！");
+  }
+  function respawn(){
+    // スタート地点へ戻す
+    const px = LEVEL.flat().indexOf('S');
+    const sx = LEVEL.findIndex(row=>row.includes('S'));
+    // 位置は buildLevel と同様に（簡易）
+    for (let y=0;y<mapH;y++){
+      for (let x=0;x<mapW;x++){
+        if (LEVEL[y][x]==='S'){ player.x=x*TILE+4; player.y=y*TILE-8; player.vx=0; player.vy=0; player.alive=true; return; }
+      }
+    }
+  }
+  function win(){ flash("クリア！おめでとう🎉"); paused=true; }
+  function lose(){ flash("ゲームオーバー… Rで再挑戦"); paused=true; }
+
+  // ===== メインループ =====
+  let last=0, paused=false;
+  function step(ts){
+    const t = ts/1000;
+    if (!last) last=t;
+    let dt = Math.min(0.033, t-last); last=t;
+
+    if (!paused){
+      // 更新
+      player.update(dt);
+      for (const e of enemies) e.update(dt);
+      for (const c of coins) c.update(dt);
+      enemies = enemies.filter(e=>!e.rem);
+      coins   = coins.filter(c=>!c.rem);
+      particles.update(dt);
+      updateCamera(dt);
+      updateHUD();
+      if (msgTimer>0){ msgTimer -= dt; elMsg.style.opacity = Math.max(0, msgTimer/0.6); }
+    }
+
+    // 描画
+    draw();
+
+    requestAnimationFrame(step);
+  }
+
+  function draw(){
+    const w = cv.clientWidth, h=cv.clientHeight;
+
+    // カメラシェイク
+    let sx=0, sy=0;
+    if (shakeT>0){
+      shakeT -= 1/60;
+      const f = shakeT/0.35;
+      sx = (Math.random()-0.5) * shakeMag * f;
+      sy = (Math.random()-0.5) * shakeMag * f;
+    }
+
+    ctx.save();
+    ctx.translate(-camera.x+sx, -camera.y+sy);
+
+    // 背景（やわらか雲）
+    drawSky();
+    drawHills();
+
+    // タイル描画
+    for (let y=0;y<mapH;y++){
+      for (let x=0;x<mapW;x++){
+        const ch = LEVEL[y][x];
+        const px = x*TILE, py=y*TILE;
+        if (ch==='#') {
+          roundedRect(px+2,py+2,TILE-4,TILE-4,8,COLORS.block,true);
+          // 影
+          ctx.globalAlpha=0.08;
+          roundedRect(px+4,py+6,TILE-8,TILE-8,8,'#000',true);
+          ctx.globalAlpha=1;
+          // エッジ
+          ctx.strokeStyle = COLORS.blockEdge; ctx.lineWidth=2;
+          roundedRect(px+2,py+2,TILE-4,TILE-4,8,false);
+        } else if (ch==='^'){
+          // トゲ
+          ctx.fillStyle = COLORS.spike;
+          ctx.beginPath();
+          ctx.moveTo(px+4, py+TILE-4);
+          ctx.lineTo(px+TILE/2, py+6);
+          ctx.lineTo(px+TILE-4, py+TILE-4);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+
+    // コイン・敵・旗・プレイヤー
+    for (const c of coins) c.draw();
+    for (const e of enemies) e.draw();
+    flag.draw();
+    player.draw();
+    particles.draw();
+
+    ctx.restore();
+
+    // 前景の柔らかい光
+    ctx.globalAlpha=0.12;
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(0,0,cv.clientWidth,cv.clientHeight);
+    ctx.globalAlpha=1;
+  }
+
+  function drawSky(){
+    // ふわふわ雲
+    const off = (Date.now()/4000)%10000;
+    for (let i=0;i<6;i++){
+      const x = (i*300 - (camera.x*0.2 + off))% (mapW*TILE);
+      const y = 40 + (i%3)*30;
+      cloud(x, y, 80+ i*10, 22+ i*2);
+    }
+  }
+  function cloud(x,y,w,h){
+    ctx.globalAlpha=0.25; ellipse(x,y,w,h,'#fff');
+    ellipse(x+w*0.4,y-6,w*0.8,h*0.9,'#fff');
+    ellipse(x-w*0.2,y-4,w*0.6,h*0.8,'#fff');
+    ctx.globalAlpha=1;
+  }
+  function drawHills(){
+    // 奥のゆる丘
+    ctx.globalAlpha=0.25;
+    ctx.fillStyle='#bfefff';
+    const baseY = mapH*TILE-60;
+    ctx.beginPath();
+    ctx.moveTo(-1000, baseY);
+    for (let x= -1000; x< mapW*TILE+1000; x+=80){
+      const y = baseY - 10*Math.sin((x+camera.x)*0.001) - 18*Math.sin((x+camera.x)*0.0004);
+      ctx.lineTo(x,y);
+    }
+    ctx.lineTo(mapW*TILE+1000, baseY+400);
+    ctx.lineTo(-1000, baseY+400);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+
+  // ===== スタート！ =====
+  buildLevel();
+  requestAnimationFrame(step);
+
+})();
+</script>
+</body>
+</html>
