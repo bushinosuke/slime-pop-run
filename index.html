@@ -241,6 +241,9 @@
       // ハザード判定
       if (this.hitHazard()) this.die();
 
+      // 穴落下判定
+      if (this.bottom > mapH * TILE) this.die();
+
       // 敵踏みつけ・接触
       for (const e of enemies) {
         if (e.dead) continue;
