@@ -42,7 +42,7 @@
 <div id="wrap">
   <div id="hud">
     <div class="stat" id="score">★ 0</div>
-    <div class="stat" id="tips">操作：←→ 移動 / ↑ or Space ジャンプ / R リスタート</div>
+    <div class="stat" id="tips">操作：←→ 停止 / ↑ or Space ジャンプ / R リスタート</div>
     <div class="stat" id="lives">♥ 3</div>
   </div>
   <div id="game">
@@ -80,11 +80,12 @@
   };
 
   // ===== 入力管理 =====
-  const keys = { left:false, right:false, up:false };
+  const keys = { stop:false, up:false };
   const onKey = (e, down) => {
     switch (e.code) {
-      case 'ArrowLeft': case 'KeyA': keys.left=down; break;
-      case 'ArrowRight': case 'KeyD': keys.right=down; break;
+      case 'ArrowLeft': case 'KeyA':
+      case 'ArrowRight': case 'KeyD':
+        keys.stop = down; break;
       case 'ArrowUp': case 'Space': case 'KeyW': if (down) keys.up=true; break;
       case 'KeyR': if (down) resetLevel(); break;
     }
@@ -102,8 +103,8 @@
     addEventListener('pointercancel', off);
     addEventListener('pointerleave', off);
   };
-  bindHold(document.querySelector('[data-left]'),  v=>keys.left=v);
-  bindHold(document.querySelector('[data-right]'), v=>keys.right=v);
+  bindHold(document.querySelector('[data-left]'),  v=>keys.stop=v);
+  bindHold(document.querySelector('[data-right]'), v=>keys.stop=v);
   bindHold(document.querySelector('[data-jump]'),  v=>{ if (v) keys.up=true; });
 
   // ===== キャンバス =====
@@ -186,20 +187,19 @@
       const maxFall = 900;
       const jumpV = 620;
 
-      // 入力
-      let ax = 0;
-      if (keys.left)  ax -= accel, this.facing=-1;
-      if (keys.right) ax += accel, this.facing= 1;
+      // 自動で右に進む。キー入力で停止。
+      const ax = keys.stop ? 0 : accel;
+      this.facing = 1;
 
       // 水平速度
       if (ax !== 0) {
         this.vx += ax*dt;
-        this.vx = clamp(this.vx, -speed, speed);
+        this.vx = clamp(this.vx, 0, speed);
       } else {
-        // 自然減速
         if (Math.abs(this.vx) < 4) this.vx = 0;
         else this.vx -= decc * sign(this.vx) * dt;
       }
+      this.vx = Math.max(0, this.vx);
 
       // ジャンプ入力バッファ
       if (keys.up){ this.jumpBuffered = 0.12; keys.up=false; }
