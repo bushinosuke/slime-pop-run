@@ -107,6 +107,14 @@
   bindHold(document.querySelector('[data-right]'), v=>keys.stop=v);
   bindHold(document.querySelector('[data-jump]'),  v=>{ if (v) keys.up=true; });
 
+  // 画面のどこをタップしてもジャンプ
+  document.getElementById('game').addEventListener('pointerdown', e => {
+    if (!e.target.closest('.btn')) {
+      e.preventDefault();
+      keys.up = true;
+    }
+  });
+
   // ===== キャンバス =====
   const cv = document.getElementById('cv');
   const ctx = cv.getContext('2d');
