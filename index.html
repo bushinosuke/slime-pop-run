@@ -135,6 +135,16 @@
     let ground = height - 2;
     const heights = [];
     for (let x=0; x<width; x++){
+      // ランダムな穴（ジャンプで越えられる幅）
+      if (x>2 && x<width-3 && Math.random() < 0.06){
+        const holeW = Math.random() < 0.5 ? 1 : 2;
+        for (let i=0; i<holeW && x<width; i++, x++){
+          heights.push(ground);
+          // 何も置かず、デフォルトの '.' のままにする
+        }
+        x--; // for ループのインクリメント分を調整
+        continue;
+      }
       if (Math.random() < 0.3){
         ground += Math.sign(Math.random() - 0.5);
         ground = clamp(ground, 4, height-2);
