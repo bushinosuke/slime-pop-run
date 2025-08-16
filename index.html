@@ -638,15 +638,17 @@
 
   function startStage(){
     paused = true;
+    elMsg.style.fontSize = '';
     flash(`ステージ${stage}`, 1);
     let count = 3;
     const countdown = () => {
+      elMsg.style.fontSize = '64px';
       flash(`${count}`, 1);
       if (count > 1){
         count--;
         setTimeout(countdown, 1000);
       } else {
-        setTimeout(() => { flash('スタート！', 1); paused = false; }, 1000);
+        setTimeout(() => { elMsg.style.fontSize=''; flash('スタート！', 1); paused = false; }, 1000);
       }
     };
     setTimeout(countdown, 1000);
