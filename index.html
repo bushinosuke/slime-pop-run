@@ -136,6 +136,30 @@
     let ground = height - 2;
     const heights = [];
     for (let x=0; x<width; x++){
+      // 島型の陸地（両側が穴の小さな足場）
+      if (x>2 && x<width-3 && Math.random() < 0.04){
+        const islandW = Math.random() < 0.5 ? 1 : 2;
+        const gap = 1;
+        // 左の穴
+        for (let g=0; g<gap && x<width; g++, x++){
+          heights.push(ground);
+          // 何も置かず、デフォルトの '.' のまま
+        }
+        // 島本体
+        for (let i=0; i<islandW && x<width; i++, x++){
+          heights.push(ground);
+          for (let y=ground; y<height; y++) grid[y][x] = '#';
+          if (Math.random() < 0.05) grid[ground-1][x] = 'o';
+          if (Math.random() < 0.03) grid[ground-1][x] = '^';
+          if (Math.random() < 0.02) grid[ground-1][x] = 'e';
+        }
+        // 右の穴
+        for (let g=0; g<gap && x<width; g++, x++){
+          heights.push(ground);
+        }
+        x--; // for ループのインクリメント分を調整
+        continue;
+      }
       // ランダムな穴（ジャンプで越えられる幅）
       if (x>2 && x<width-3 && Math.random() < 0.06){
         const holeW = Math.random() < 0.5 ? 1 : 2;
