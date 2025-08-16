@@ -42,7 +42,7 @@
 <div id="wrap">
   <div id="hud">
     <div class="stat" id="score">★ 0</div>
-    <div class="stat" id="tips">操作：←→ 停止 / ↑ or Space ジャンプ / R リスタート</div>
+    <div class="stat" id="tips">操作：↓ 低速 / ↑ or Space ジャンプ / R リスタート</div>
     <div class="stat" id="lives">♥ 3</div>
   </div>
   <div id="game">
@@ -50,8 +50,10 @@
     <canvas id="cv" width="960" height="540" aria-label="Slime Pop Run"></canvas>
     <div id="controls" aria-hidden="false">
       <div class="pad">
-        <div class="btn" data-left>←</div>
-        <div class="btn" data-right>→</div>
+        <div class="btn" data-slow>▼</div>
+      </div>
+      <div class="pad">
+        <div class="btn" data-jump>⤴</div>
       </div>
     </div>
   </div>
@@ -77,16 +79,15 @@
   };
 
   // ===== 入力管理 =====
-  const keys = { stop:false, up:false };
+  const keys = { slow:false, up:false };
   const onKey = (e, down) => {
     switch (e.code) {
-      case 'ArrowLeft': case 'KeyA':
-      case 'ArrowRight': case 'KeyD':
-        keys.stop = down; break;
+      case 'ArrowDown': case 'KeyS':
+        keys.slow = down; break;
       case 'ArrowUp': case 'Space': case 'KeyW': if (down) keys.up=true; break;
       case 'KeyR': if (down) resetLevel(); break;
     }
-    if (['ArrowLeft','ArrowRight','ArrowUp','Space'].includes(e.code)) e.preventDefault();
+    if (['ArrowDown','ArrowUp','Space'].includes(e.code)) e.preventDefault();
   };
   addEventListener('keydown', e=>onKey(e,true));
   addEventListener('keyup',   e=>onKey(e,false));
@@ -100,8 +101,8 @@
     addEventListener('pointercancel', off);
     addEventListener('pointerleave', off);
   };
-  bindHold(document.querySelector('[data-left]'),  v=>keys.stop=v);
-  bindHold(document.querySelector('[data-right]'), v=>keys.stop=v);
+  bindHold(document.querySelector('[data-slow]'), v=>keys.slow=v);
+  bindHold(document.querySelector('[data-jump]'),  v=>{ if (v) keys.up=true; });
 
   // 画面のどこをタップしてもジャンプ
   document.getElementById('game').addEventListener('pointerdown', e => {
@@ -201,17 +202,17 @@
       const maxFall = 900;
       const jumpV = 620;
 
-      // 自動で右に進む。キー入力で停止。
-      const ax = keys.stop ? 0 : accel;
+      // 自動で右に進む。キー入力で低速。
+      const maxSpeed = keys.slow ? 80 : 160;
       this.facing = 1;
 
       // 水平速度
-      if (ax !== 0) {
-        this.vx += ax*dt;
-        this.vx = clamp(this.vx, 0, speed);
-      } else {
-        if (Math.abs(this.vx) < 4) this.vx = 0;
-        else this.vx -= decc * sign(this.vx) * dt;
+      if (this.vx < maxSpeed) {
+        this.vx += accel * dt;
+        if (this.vx > maxSpeed) this.vx = maxSpeed;
+      } else if (this.vx > maxSpeed) {
+        this.vx -= decc * dt;
+        if (this.vx < maxSpeed) this.vx = maxSpeed;
       }
       this.vx = Math.max(0, this.vx);
 
