@@ -53,9 +53,6 @@
         <div class="btn" data-left>←</div>
         <div class="btn" data-right>→</div>
       </div>
-      <div class="pad">
-        <div class="btn" data-jump>⤴</div>
-      </div>
     </div>
   </div>
 </div>
@@ -105,7 +102,6 @@
   };
   bindHold(document.querySelector('[data-left]'),  v=>keys.stop=v);
   bindHold(document.querySelector('[data-right]'), v=>keys.stop=v);
-  bindHold(document.querySelector('[data-jump]'),  v=>{ if (v) keys.up=true; });
 
   // 画面のどこをタップしてもジャンプ
   document.getElementById('game').addEventListener('pointerdown', e => {
