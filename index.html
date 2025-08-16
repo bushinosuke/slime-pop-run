@@ -582,11 +582,20 @@
 
   // ===== カメラ =====
   const camera = { x:0, y:0 };
+  let scrolling = false;
+  let cameraTargetX = 0, cameraTargetY = 0;
+  let onScrollDone = null;
   function updateCamera(dt){
-    const targetX = clamp(player.x - cv.clientWidth/2 + player.w/2, 0, mapW*TILE - cv.clientWidth);
-    const targetY = clamp(player.y - cv.clientHeight/2 + player.h/2, 0, mapH*TILE - cv.clientHeight);
+    const targetX = scrolling ? cameraTargetX : clamp(player.x - cv.clientWidth/2 + player.w/2, 0, mapW*TILE - cv.clientWidth);
+    const targetY = scrolling ? cameraTargetY : clamp(player.y - cv.clientHeight/2 + player.h/2, 0, mapH*TILE - cv.clientHeight);
     camera.x += (targetX - camera.x) * Math.min(1, dt*6);
     camera.y += (targetY - camera.y) * Math.min(1, dt*6);
+    if (scrolling && Math.abs(targetX - camera.x) < 1 && Math.abs(targetY - camera.y) < 1){
+      camera.x = targetX;
+      camera.y = targetY;
+      scrolling = false;
+      if (onScrollDone) { const cb = onScrollDone; onScrollDone = null; cb(); }
+    }
   }
 
   // ===== HUD =====
@@ -640,18 +649,25 @@
     paused = true;
     elMsg.style.fontSize = '';
     flash(`ステージ${stage}`, 1);
-    let count = 3;
-    const countdown = () => {
-      elMsg.style.fontSize = '64px';
-      flash(`${count}`, 1);
-      if (count > 1){
-        count--;
-        setTimeout(countdown, 1000);
-      } else {
-        setTimeout(() => { elMsg.style.fontSize=''; flash('スタート！', 1); paused = false; }, 1000);
-      }
+    const targetX = clamp(player.x - cv.clientWidth/2 + player.w/2, 0, mapW*TILE - cv.clientWidth);
+    const targetY = clamp(player.y - cv.clientHeight/2 + player.h/2, 0, mapH*TILE - cv.clientHeight);
+    cameraTargetX = targetX;
+    cameraTargetY = targetY;
+    scrolling = true;
+    onScrollDone = () => {
+      let count = 3;
+      const countdown = () => {
+        elMsg.style.fontSize = '64px';
+        flash(`${count}`, 1);
+        if (count > 1){
+          count--;
+          setTimeout(countdown, 1000);
+        } else {
+          setTimeout(() => { elMsg.style.fontSize=''; flash('スタート！', 1); paused = false; }, 1000);
+        }
+      };
+      setTimeout(countdown, 1000);
     };
-    setTimeout(countdown, 1000);
   }
 
   function resetLevel(){
@@ -700,9 +716,11 @@
       enemies = enemies.filter(e=>!e.rem);
       coins   = coins.filter(c=>!c.rem);
       particles.update(dt);
-      updateCamera(dt);
       updateHUD();
       if (msgTimer>0){ msgTimer -= dt; elMsg.style.opacity = Math.max(0, msgTimer/0.6); }
+    }
+    if (!paused || scrolling){
+      updateCamera(dt);
     }
 
     // 描画
