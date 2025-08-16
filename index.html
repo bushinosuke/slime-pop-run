@@ -124,6 +124,22 @@
     }
   });
 
+  // ===== オーディオ =====
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function playJumpSound() {
+    audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.2);
+  }
+
   // ===== キャンバス =====
   const cv = document.getElementById('cv');
   const ctx = cv.getContext('2d');
@@ -272,14 +288,15 @@
       if (this.onGround) { this.coyote = 0.08; this.jumpCount = 0; }
 
       // ジャンプ（コヨーテタイム＋入力バッファ）
-      if (this.alive && this.jumpBuffered>0 && (this.onGround || this.coyote>0 || this.jumpCount<2)) {
-        this.vy = -jumpV;
-        this.onGround = false;
-        this.coyote = 0;
-        this.jumpBuffered = 0;
-        this.jumpCount++;
-        particles.jump(this.x+this.w/2, this.bottom);
-      }
+        if (this.alive && this.jumpBuffered>0 && (this.onGround || this.coyote>0 || this.jumpCount<2)) {
+          this.vy = -jumpV;
+          this.onGround = false;
+          this.coyote = 0;
+          this.jumpBuffered = 0;
+          this.jumpCount++;
+          particles.jump(this.x+this.w/2, this.bottom);
+          playJumpSound();
+        }
 
       // ハザード判定
       if (this.hitHazard()) this.die();
