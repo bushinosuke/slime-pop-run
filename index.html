@@ -52,9 +52,6 @@
       <div class="pad">
         <div class="btn" data-slow>▼</div>
       </div>
-      <div class="pad">
-        <div class="btn" data-jump>⤴</div>
-      </div>
     </div>
   </div>
 </div>
@@ -102,7 +99,6 @@
     addEventListener('pointerleave', off);
   };
   bindHold(document.querySelector('[data-slow]'), v=>keys.slow=v);
-  bindHold(document.querySelector('[data-jump]'),  v=>{ if (v) keys.up=true; });
 
   // 画面のどこをタップしてもジャンプ
   document.getElementById('game').addEventListener('pointerdown', e => {
