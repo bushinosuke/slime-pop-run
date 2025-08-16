@@ -42,7 +42,7 @@
 <div id="wrap">
   <div id="hud">
     <div class="stat" id="score">★ 0</div>
-    <div class="stat" id="tips">操作：↓ 低速 / ↑ or Space ジャンプ / R リスタート</div>
+    <div class="stat" id="tips">操作：↓ 低速 / ↑ or Space ジャンプ（二段まで） / R リスタート</div>
     <div class="stat" id="lives">♥ 3</div>
   </div>
   <div id="game">
@@ -211,6 +211,7 @@
       this.onGround=false;
       this.jumpBuffered=0;
       this.coyote=0;
+      this.jumpCount=0;
       this.facing=1;
       this.alive=true;
       this.blink=0;
@@ -252,14 +253,15 @@
       const wasOnGround = this.onGround;
       this.onGround = this.resolveCollisions(false);
 
-      if (this.onGround) this.coyote = 0.08;
+      if (this.onGround) { this.coyote = 0.08; this.jumpCount = 0; }
 
       // ジャンプ（コヨーテタイム＋入力バッファ）
-      if (this.alive && this.jumpBuffered>0 && (this.onGround || this.coyote>0)) {
+      if (this.alive && this.jumpBuffered>0 && (this.onGround || this.coyote>0 || this.jumpCount<2)) {
         this.vy = -jumpV;
         this.onGround = false;
         this.coyote = 0;
         this.jumpBuffered = 0;
+        this.jumpCount++;
         particles.jump(this.x+this.w/2, this.bottom);
       }
 
