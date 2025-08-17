@@ -66,7 +66,7 @@
       </div>
     </div>
     <div id="menu">
-      <button id="retryBtn">再挑戦</button>
+      <button id="continueBtn">コンティニュー</button>
       <button id="resetBtn">リセット</button>
     </div>
   </div>
@@ -247,6 +247,7 @@
       this.facing=1;
       this.alive=true;
       this.blink=0;
+      this.evil=false;
     }
     update(dt){
       const accel = 1400;
@@ -387,7 +388,7 @@
       this.alive=false;
       lives--;
       shake(8, 350);
-      particles.poof(this.x+this.w/2, this.y+this.h/2, COLORS.slimeBody);
+      particles.poof(this.x+this.w/2, this.y+this.h/2, this.evil ? '#222' : COLORS.slimeBody);
       if (lives<=0) lose();
       else respawn();
     }
@@ -398,13 +399,16 @@
       const squish = clamp((Math.sin(t*6)+1)/12,0,0.1);
       const w = this.w*(1+squish), h = this.h*(1-squish);
       const cx = this.x + this.w/2, cy = this.y + this.h/2;
-      roundedBlob(cx, cy, w, h, COLORS.slimeBody, COLORS.slimeBelly);
+      const bodyCol  = this.evil ? '#222' : COLORS.slimeBody;
+      const bellyCol = this.evil ? '#444' : COLORS.slimeBelly;
+      roundedBlob(cx, cy, w, h, bodyCol, bellyCol);
 
       // 目
       const eyeY = -3;
       const eyeX = 5 * this.facing;
-      circle(cx - eyeX, cy + eyeY, 3, COLORS.slimeEye);
-      circle(cx + eyeX, cy + eyeY, 3, COLORS.slimeEye);
+      const eyeCol = this.evil ? '#f00' : COLORS.slimeEye;
+      circle(cx - eyeX, cy + eyeY, 3, eyeCol);
+      circle(cx + eyeX, cy + eyeY, 3, eyeCol);
 
       // ほんのり影
       ctx.globalAlpha = 0.15;
@@ -603,11 +607,11 @@
   const elLives = document.getElementById('lives');
   const elMsg   = document.getElementById('msg');
   const elMenu  = document.getElementById('menu');
-  const btnRetry = document.getElementById('retryBtn');
+  const btnContinue = document.getElementById('continueBtn');
   const btnReset = document.getElementById('resetBtn');
-  btnRetry.addEventListener('click', () => { resetLevel(); });
+  btnContinue.addEventListener('click', () => { continueGame(); });
   btnReset.addEventListener('click', () => { location.reload(); });
-  let score = 0, lives = 3, stage = 1;
+  let score = 0, lives = 3, stage = 1, continued = false;
   function getStageSpeed(){
     return 160 + (stage-1) * 10;
   }
@@ -643,6 +647,7 @@
     }
     if (!player) player = new Player(32, 32);
     if (!flag) flag = new Flag((mapW-3)*TILE, (mapH-2)*TILE);
+    player.evil = continued;
   }
 
   function startStage(){
@@ -670,9 +675,18 @@
     };
   }
 
+  function continueGame(){
+    elMenu.style.display = 'none';
+    lives = 3;
+    continued = true;
+    updateHUD();
+    generateLevel();
+    buildLevel();
+    startStage();
+  }
   function resetLevel(){
     elMenu.style.display = 'none';
-    score = 0; lives = 3; stage = 1;
+    score = 0; lives = 3; stage = 1; continued = false;
     updateHUD();
     generateLevel();
     buildLevel();
